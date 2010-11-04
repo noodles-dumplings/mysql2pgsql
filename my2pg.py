@@ -136,6 +136,10 @@ def main ():
                       action="store_true", default=False,
                       dest="dry_run",
                       help="Make no changes to PostgreSQL database")
+    parser.add_option('--drop-tables',
+                      action="store_true", default=False,
+                      dest="drop_tables",
+                      help="Drop existing PostgreSQL tables (if any) before creating")
 
     options, args = parser.parse_args()
     if len(args) != 4:
@@ -203,6 +207,11 @@ WHERE table_schema = %s AND table_name = %s
             i.non_unique = bool(row['NON_UNIQUE'])
             i.nullable = bool(row['NULLABLE'] == 'YES')
 
+        # Drop table if necessary.
+        if options.drop_tables:
+            sql = "DROP TABLE %s" % table
+            pg_execute(pg_conn, options, sql)
+            
         # Assemble into a PGSQL declaration
         sql = "CREATE TABLE %s (\n" % table
         sql += ',\n'.join(c.pg_decl() for c in cols) + '\n'
