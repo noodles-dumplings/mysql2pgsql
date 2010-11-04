@@ -2,7 +2,7 @@
 
 import sys
 import optparse, logging
-import re
+import re, collections
 import MySQLdb, psycopg2
 from MySQLdb.cursors import DictCursor
 
@@ -11,7 +11,7 @@ def pg_execute(pg_conn, options, sql, args=()):
 
     Log and execute a SQL command on the PostgreSQL connection.
     """
-    print sql, args
+    print sql
     if not options.dry_run:
         pg_cur = pg_conn.cursor()
         pg_cur.execute(sql, args)
@@ -62,7 +62,7 @@ class Column:
     default : str
     is_nullable : bool
 
-    """
+<    """
 
     def __init__(self, **kw):
         for k,v in kw.items():
@@ -89,13 +89,14 @@ class Index:
     name : str
     table : str
     type : str
-    column_name : str
+    column_names : [str]
     non_unique : bool
     nullable : bool
 
     """
 
     def __init__(self, **kw):
+        self.column_names = []
         for k,v in kw.items():
             setattr(self, k, v)
 
@@ -104,7 +105,10 @@ class Index:
 
         Return the PostgreSQL declaration syntax for this index.
         """
-        sql = 'CREATE INDEX %s ON %s' % (self.name, self.table)
+        # We'll ignore the MySQL index name, and invent a new name.
+        name = 'idx_' + '_'.join([self.table] + self.column_names)
+        sql = 'CREATE INDEX %s ON %s(%s)' % (name, self.table,
+                                             ','.join(self.column_names))
         if self.type:
             # XXX convert index_type:
             # BTREE, etc.
@@ -196,20 +200,21 @@ WHERE table_schema = %s and table_name = %s
 SELECT * FROM information_schema.statistics
 WHERE table_schema = %s AND table_name = %s
 """, (mysql_db, table))
-        indexes = []
+        d = collections.defaultdict(Index)
         for row in mysql_cur.fetchall():
-            i = Index()
-            indexes.append(i)
+            index_name = row['INDEX_NAME']
+            i = d[index_name]
             i.table = table
-            i.name = row['INDEX_NAME']
-            i.column_name = row['COLUMN_NAME']
+            i.name = index_name
+            i.column_names.append(row['COLUMN_NAME'])
             i.type = row['INDEX_TYPE']
             i.non_unique = bool(row['NON_UNIQUE'])
             i.nullable = bool(row['NULLABLE'] == 'YES')
+        indexes = d.values()
 
         # Drop table if necessary.
         if options.drop_tables:
-            sql = "DROP TABLE %s" % table
+            sql = "DROP TABLE IF EXISTS %s" % table
             pg_execute(pg_conn, options, sql)
             
         # Assemble into a PGSQL declaration
@@ -225,7 +230,7 @@ WHERE table_schema = %s AND table_name = %s
             else:
                 primary = primary_L.pop()
                 sql = sql.rstrip() + ',\n'
-                sql += '  PRIMARY KEY (%s)' % primary.column_name
+                sql += '  PRIMARY KEY (%s)' % ','.join(primary.column_names)
 
         sql += ');'
         pg_execute(pg_conn, options, sql)
