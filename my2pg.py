@@ -16,6 +16,16 @@ def pg_execute(pg_conn, options, sql, args=()):
         pg_cur = pg_conn.cursor()
         pg_cur.execute(sql, args)
 
+# XXX need to expand this set of words.
+_reserved_words = set("""end""".split())
+
+def is_reserved_word(word):
+    """(str): bool
+
+    Returns true if this word is a PostgreSQL reserved-word.
+    """
+    return word in _reserved_words
+    
 def convert_type(typ):
     """(str): str
 
@@ -74,7 +84,10 @@ class Column:
         Return the PostgreSQL declaration syntax for this column.
         """
         typ = convert_type(self.type)
-        decl = '  %s %s' % (self.name, typ)
+        name = self.name
+        if is_reserved_word(name):
+            name += '_'
+        decl = '  %s %s' % (name, typ)
         if self.default:
             decl += ' DEFAULT %s' % self.default
         if not self.is_nullable:
