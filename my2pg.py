@@ -2,7 +2,7 @@
 
 import sys
 import optparse, logging
-
+import re
 import MySQLdb, psycopg2
 from MySQLdb.cursors import DictCursor
 
@@ -22,7 +22,27 @@ def convert_type(typ):
     Parses a MySQL type declaration and returns the corresponding PostgreSQL
     type.
     """
-    # XXX implement conversion
+    if typ in ('integer', 'bigint', 'int'):
+        return 'integer'
+        
+    elif re.match('bigint[(]\d+[)]', typ):
+        # XXX use the parametrized number?
+        # XXX 'bigint NOT NULL auto_increment' -> bigserial
+        return 'integer'
+    elif re.match('integer[(]\d+[)]', typ):
+        return 'integer'
+    elif re.match('int[(]\d+[)]', typ):
+        return 'integer'
+    elif typ == 'double':
+        return 'double precision'
+    elif typ == 'datetime':
+        return 'timestamp'
+    elif typ == 'mediumtext':
+        return 'text'
+    elif typ == 'blob':
+        return 'bytea'
+
+    # Give up and just return the input type.
     return typ
 
 def convert_data(col, data):
@@ -54,7 +74,7 @@ class Column:
         Return the PostgreSQL declaration syntax for this column.
         """
         typ = convert_type(self.type)
-        decl = '%s %s' % (self.name, typ)
+        decl = '  %s %s' % (self.name, typ)
         if self.default:
             decl += ' DEFAULT %s' % self.default
         if not self.is_nullable:
@@ -195,7 +215,8 @@ WHERE table_schema = %s AND table_name = %s
                              table)
             else:
                 primary = primary_L.pop()
-                sql += 'PRIMARY KEY %s' % primary.column_name
+                sql = sql.rstrip() + ',\n'
+                sql += '  PRIMARY KEY (%s)' % primary.column_name
 
         sql += ');'
         pg_execute(pg_conn, options, sql)
