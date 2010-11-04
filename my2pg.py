@@ -25,7 +25,17 @@ def is_reserved_word(word):
     Returns true if this word is a PostgreSQL reserved-word.
     """
     return word in _reserved_words
-    
+
+def fix_reserved_word(S):
+    """(str): str
+
+    Takes a MySQL name, and adds an underscore if it's a PostgreSQL
+    reserved word.
+    """
+    if is_reserved_word(S.lower()):
+        S += '_'
+    return S
+
 def convert_type(typ):
     """(str): str
 
@@ -91,10 +101,7 @@ class Column:
         Return the PostgreSQL declaration syntax for this column.
         """
         typ = convert_type(self.type)
-        name = self.name
-        if is_reserved_word(name):
-            name += '_'
-        decl = '  %s %s' % (name, typ)
+        decl = '  %s %s' % (fix_reserved_word(self.name), typ)
         if self.default:
             default = self.get_default()
             decl += ' DEFAULT %s' % default
@@ -103,10 +110,14 @@ class Column:
         return decl
 
     def get_default(self):
-        if (self.type == 'datetime' and
+        if (self.type in ('datetime', 'timestamp') and
             self.default == "0000-00-00 00:00:00"):
             return 'NULL'
 
+        typ = convert_type(self.type)
+        if typ.startswith(('char', 'varchar')):
+            return "'" + self.default + "'"
+            
         return self.default
 
 class Index:
@@ -135,7 +146,8 @@ class Index:
         """
         # We'll ignore the MySQL index name, and invent a new name.
         name = 'idx_' + '_'.join([self.table] + self.column_names)
-        sql = 'CREATE INDEX %s ON %s(%s)' % (name, self.table,
+        sql = 'CREATE INDEX %s ON %s(%s)' % (fix_reserved_word(name),
+                                             fix_reserved_word(self.table),
                                              ','.join(self.column_names))
         if self.type:
             # XXX convert index_type:
@@ -248,11 +260,12 @@ WHERE table_schema = %s AND table_name = %s
 
         # Drop table if necessary.
         if options.drop_tables:
-            sql = "DROP TABLE IF EXISTS %s" % table
+            sql = "DROP TABLE IF EXISTS %s" % fix_reserved_word(table)
             pg_execute(pg_conn, options, sql)
             
         # Assemble into a PGSQL declaration
-        sql = "CREATE TABLE %s (\n" % table
+        pg_table = fix_reserved_word(table)
+        sql = "CREATE TABLE %s (\n" % pg_table
         sql += ',\n'.join(c.pg_decl() for c in cols) + '\n'
 
         # Look for index named PRIMARY, and add PRIMARY KEY if found.
@@ -280,14 +293,19 @@ WHERE table_schema = %s AND table_name = %s
 
     for table in tables:
         # Convert data.
-        mysql_cur.execute("SELECT * FROM %s", table)
+        pg_table = table
+        if is_reserved_word(pg_table):
+            pg_table += '_'
+            
         cols = table_cols[table]
 
         # Assemble the INSERT statement once.
         ins_sql = ('INSERT INTO %s (%s) VALUES (%s);' %
-                   (table,
+                   (pg_table,
                     ', '.join(c.name for c in cols),
                     ','.join(['%s'] * len(cols))))
+
+        mysql_cur.execute("SELECT * FROM %s", table)
 
         # We don't do a fetchall() since the table contents are
         # very likely to not fit into memory.
