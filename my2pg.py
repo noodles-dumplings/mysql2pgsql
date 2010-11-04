@@ -164,6 +164,10 @@ def main ():
                       action="store_true", default=False,
                       dest="drop_tables",
                       help="Drop existing PostgreSQL tables (if any) before creating")
+    parser.add_option('--starting-table',
+                      action="store", default=None,
+                      dest="starting_table",
+                      help="Name of table to start conversion with")
 
     options, args = parser.parse_args()
     if len(args) != 4:
@@ -193,6 +197,8 @@ SELECT * FROM information_schema.tables WHERE table_schema = %s
 """, mysql_db)
     rows = mysql_cur.fetchall()
     tables = sorted(row['TABLE_NAME'] for row in rows)
+    if options.starting_table:
+        tables = [t for t in tables if options.starting_table <= t]
 
     # Convert tables
     table_cols = {}
