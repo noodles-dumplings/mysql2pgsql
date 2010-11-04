@@ -17,7 +17,7 @@ def pg_execute(pg_conn, options, sql, args=()):
         pg_cur.execute(sql, args)
 
 # XXX need to expand this set of words.
-_reserved_words = set("""end""".split())
+_reserved_words = set("""end user""".split())
 
 def is_reserved_word(word):
     """(str): bool
@@ -54,9 +54,9 @@ def convert_type(typ):
         return 'double precision'
     elif typ == 'datetime':
         return 'timestamp'
-    elif typ == 'mediumtext':
+    elif typ in ('tinytext', 'text', 'mediumtext', 'longtext'):
         return 'text'
-    elif typ == 'blob':
+    elif typ in ('tinyblob', 'blob', 'mediumblob', 'longblob'):
         return 'bytea'
 
     # Give up and just return the input type.
@@ -96,10 +96,18 @@ class Column:
             name += '_'
         decl = '  %s %s' % (name, typ)
         if self.default:
-            decl += ' DEFAULT %s' % self.default
+            default = self.get_default()
+            decl += ' DEFAULT %s' % default
         if not self.is_nullable:
             decl += ' NOT NULL'
         return decl
+
+    def get_default(self):
+        if (self.type == 'datetime' and
+            self.default == "0000-00-00 00:00:00"):
+            return 'NULL'
+
+        return self.default
 
 class Index:
     """
