@@ -1,16 +1,20 @@
 #!/usr/bin/env python
 
 import sys
-import optparse
-import MySQLdb, psycopg2
+import optparse, logging
 
-def pg_execute(pg_conn, sql):
-    """(Connection, str)
+import MySQLdb, psycopg2
+from MySQLdb.cursors import DictCursor
+
+def pg_execute(pg_conn, options, sql, args=()):
+    """(Connection, Options, str, tuple)
 
     Log and execute a SQL command on the PostgreSQL connection.
     """
-    print sql
-    # XXX execute command
+    print sql, args
+    if not options.dry_run:
+        pg_cur = pg_conn.cursor()
+        pg_cur.execute(sql, args)
 
 def convert_type(typ):
     """(str): str
@@ -52,7 +56,7 @@ class Column:
         typ = convert_type(self.type)
         decl = '%s %s' % (self.name, typ)
         if self.default:
-            decl += ' ' + self.default
+            decl += ' DEFAULT %s' % self.default
         if not self.is_nullable:
             decl += ' NOT NULL'
         return decl
@@ -81,7 +85,7 @@ class Index:
         Return the PostgreSQL declaration syntax for this index.
         """
         sql = 'CREATE INDEX %s ON %s' % (self.name, self.table)
-        if self.index_type:
+        if self.type:
             # XXX convert index_type:
             # BTREE, etc.
             pass
@@ -108,6 +112,10 @@ def main ():
                       action="store", default='',
                       dest="pg_password",
                       help="Password to use when connecting to server.")
+    parser.add_option('-n', '--dry-run',
+                      action="store_true", default=False,
+                      dest="dry_run",
+                      help="Make no changes to PostgreSQL database")
 
     options, args = parser.parse_args()
     if len(args) != 4:
@@ -129,21 +137,21 @@ def main ():
         user=options.pg_user,
         password=options.pg_password,
         )
-    mysql_cur = mysql_conn.Cursor()
-    pg_cur = pg_conn.Cursor()
+    mysql_cur = mysql_conn.cursor(cursorclass=DictCursor)
 
     # Make list of tables to process.
     mysql_cur.execute("""
-SELECT * FROM information_schema.tables WHERE table_schema = '?'
+SELECT * FROM information_schema.tables WHERE table_schema = %s
 """, mysql_db)
-    tables = sorted(row['TABLE_NAME'] for row in mysql_cur.fetchall())
+    rows = mysql_cur.fetchall()
+    tables = sorted(row['TABLE_NAME'] for row in rows)
 
     # Convert tables
     table_cols = {}
     for table in tables:
         mysql_cur.execute("""
 SELECT * FROM information_schema.columns
-WHERE table_schema = ? and table_name = ?
+WHERE table_schema = %s and table_name = %s
 """, (mysql_db, table))
         cols = table_cols[table] = []
         for row in mysql_cur.fetchall():
@@ -162,7 +170,7 @@ WHERE table_schema = ? and table_name = ?
         # Convert indexes
         mysql_cur.execute("""
 SELECT * FROM information_schema.statistics
-WHERE table_schema = ? AND table_name = ?
+WHERE table_schema = %s AND table_name = %s
 """, (mysql_db, table))
         indexes = []
         for row in mysql_cur.fetchall():
@@ -176,20 +184,21 @@ WHERE table_schema = ? AND table_name = ?
             i.nullable = bool(row['NULLABLE'] == 'YES')
 
         # Assemble into a PGSQL declaration
-        sql = "CREATE TABLE (\n"
-        for c in column:
-            sql += ' ' + c.pg_decl() + ',\n'
+        sql = "CREATE TABLE %s (\n" % table
+        sql += ',\n'.join(c.pg_decl() for c in cols) + '\n'
 
         # Look for index named PRIMARY, and add PRIMARY KEY if found.
         primary_L = [i for i in indexes if i.name == 'PRIMARY']
         if len(primary_L):
-            assert len(primary_L) == 1
-            primary = primary_L.pop()
-            sql += 'PRIMARY KEY %s' % primary.column_name
-
+            if len(primary_L) >  1:
+                logging.warn('%s: Multiple PRIMARY indexes on table',
+                             table)
+            else:
+                primary = primary_L.pop()
+                sql += 'PRIMARY KEY %s' % primary.column_name
 
         sql += ');'
-        pg_execute(pg_conn, sql)
+        pg_execute(pg_conn, options, sql)
 
         # Create indexes
         for i in indexes:
@@ -197,19 +206,19 @@ WHERE table_schema = ? AND table_name = ?
                 continue
 
             sql = i.pg_decl()
-            pg_execute(pg_conn, sql)
+            pg_execute(pg_conn, options, sql)
 
 
     for table in tables:
         # Convert data.
-        mysql_cur.execute("SELECT * FROM ?", table)
+        mysql_cur.execute("SELECT * FROM %s", table)
         cols = table_cols[table]
 
         # Assemble the INSERT statement once.
         ins_sql = ('INSERT INTO %s (%s) VALUES (%s);' %
                    (table,
                     ', '.join(c.name for c in cols),
-                    ','.join(['?'] * len(cols))))
+                    ','.join(['%s'] * len(cols))))
 
         # We don't do a fetchall() since the table contents are
         # very likely to not fit into memory.
@@ -226,7 +235,7 @@ WHERE table_schema = ? AND table_name = ?
                 newdata = convert_data(c, data)
                 output_L.append(newdata)
 
-            pg_cur.execute(ins_sql, tuple(output_L))
+            pg_execute(pg_conn, options, ins_sql, tuple(output_L))
 
         pass
 
