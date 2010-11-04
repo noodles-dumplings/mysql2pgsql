@@ -32,17 +32,24 @@ def convert_type(typ):
     Parses a MySQL type declaration and returns the corresponding PostgreSQL
     type.
     """
-    if typ in ('integer', 'bigint', 'int'):
+    if re.match('tinyint([(]\d+[)])?', typ):
+        # MySQL tinyint is 1 byte, -128 to 127; we'll use the 2-byte int.
+        return 'smallint'
+    elif re.match('smallint([(]\d+[)])?', typ):
+        return 'smallint'
+    elif re.match('mediumint([(]\d+[)])?', typ):
+        # MySQL medium int is 3 bytes; we'll use the 4-byte int.
         return 'integer'
-        
-    elif re.match('bigint[(]\d+[)]', typ):
+    elif re.match('bigint([(]\d+[)])?', typ):
         # XXX use the parametrized number?
         # XXX 'bigint NOT NULL auto_increment' -> bigserial
+        return 'bigint'
+    elif re.match('integer([(]\d+[)])?', typ):
         return 'integer'
-    elif re.match('integer[(]\d+[)]', typ):
+    elif re.match('int([(]\d+[)])?', typ):
         return 'integer'
-    elif re.match('int[(]\d+[)]', typ):
-        return 'integer'
+    elif typ == 'float':
+        return 'real'
     elif typ == 'double':
         return 'double precision'
     elif typ == 'datetime':
