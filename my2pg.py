@@ -184,6 +184,10 @@ def main ():
                       action="store_true", default=False,
                       dest="drop_tables",
                       help="Drop existing PostgreSQL tables (if any) before creating")
+    parser.add_option('--data-only',
+                      action="store_true", default=False,
+                      dest="data_only",
+                      help="Assume the tables already exist, and only convert data")
     parser.add_option('--starting-table',
                       action="store", default=None,
                       dest="starting_table",
@@ -258,45 +262,43 @@ WHERE table_schema = %s AND table_name = %s
             i.nullable = bool(row['NULLABLE'] == 'YES')
         indexes = d.values()
 
-        # Drop table if necessary.
-        if options.drop_tables:
-            sql = "DROP TABLE IF EXISTS %s" % fix_reserved_word(table)
+        if not options.data_only:
+            # Drop table if necessary.
+            if options.drop_tables:
+                sql = "DROP TABLE IF EXISTS %s" % fix_reserved_word(table)
+                pg_execute(pg_conn, options, sql)
+
+            # Assemble into a PGSQL declaration
+            pg_table = fix_reserved_word(table)
+            sql = "CREATE TABLE %s (\n" % pg_table
+            sql += ',\n'.join(c.pg_decl() for c in cols) + '\n'
+
+            # Look for index named PRIMARY, and add PRIMARY KEY if found.
+            primary_L = [i for i in indexes if i.name == 'PRIMARY']
+            if len(primary_L):
+                if len(primary_L) >  1:
+                    logging.warn('%s: Multiple PRIMARY indexes on table',
+                                 table)
+                else:
+                    primary = primary_L.pop()
+                    sql = sql.rstrip() + ',\n'
+                    sql += '  PRIMARY KEY (%s)' % ','.join(primary.column_names)
+
+            sql += ');'
             pg_execute(pg_conn, options, sql)
-            
-        # Assemble into a PGSQL declaration
-        pg_table = fix_reserved_word(table)
-        sql = "CREATE TABLE %s (\n" % pg_table
-        sql += ',\n'.join(c.pg_decl() for c in cols) + '\n'
 
-        # Look for index named PRIMARY, and add PRIMARY KEY if found.
-        primary_L = [i for i in indexes if i.name == 'PRIMARY']
-        if len(primary_L):
-            if len(primary_L) >  1:
-                logging.warn('%s: Multiple PRIMARY indexes on table',
-                             table)
-            else:
-                primary = primary_L.pop()
-                sql = sql.rstrip() + ',\n'
-                sql += '  PRIMARY KEY (%s)' % ','.join(primary.column_names)
+            # Create indexes
+            for i in indexes:
+                if i.name == 'PRIMARY':
+                    continue
 
-        sql += ');'
-        pg_execute(pg_conn, options, sql)
-
-        # Create indexes
-        for i in indexes:
-            if i.name == 'PRIMARY':
-                continue
-
-            sql = i.pg_decl()
-            pg_execute(pg_conn, options, sql)
+                sql = i.pg_decl()
+                pg_execute(pg_conn, options, sql)
 
 
     for table in tables:
         # Convert data.
-        pg_table = table
-        if is_reserved_word(pg_table):
-            pg_table += '_'
-            
+        pg_table = fix_reserved_word(table)
         cols = table_cols[table]
 
         # Assemble the INSERT statement once.
