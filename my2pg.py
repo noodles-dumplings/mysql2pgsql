@@ -192,6 +192,10 @@ def main ():
                       action="store", default=None,
                       dest="starting_table",
                       help="Name of table to start conversion with")
+    parser.add_option('-v', '--verbose',
+                      action="count", default=0,
+                      dest="verbose",
+                      help="Display more output as the script runs")
 
     options, args = parser.parse_args()
     if len(args) != 4:
@@ -200,7 +204,15 @@ def main ():
 
     mysql_host, mysql_db, pg_host, pg_db = args
 
+    # Set logging level.
+    if options.verbose:
+        logging.basicConfig(level=logging.INFO)
+        if options.verbose > 1:
+            logging.basicConfig(level=logging.DEBUG)
+
     # Set up connections
+    logging.info('Connecting to databases')
+    
     mysql_conn = MySQLdb.Connection(
         user=options.mysql_user,
         passwd=options.mysql_password,
@@ -216,6 +228,7 @@ def main ():
     mysql_cur = mysql_conn.cursor(cursorclass=DictCursor)
 
     # Make list of tables to process.
+    logging.info('Reading structure of MySQL database')
     mysql_cur.execute("""
 SELECT * FROM information_schema.tables WHERE table_schema = %s
 """, mysql_db)
@@ -227,6 +240,7 @@ SELECT * FROM information_schema.tables WHERE table_schema = %s
     # Convert tables
     table_cols = {}
     for table in tables:
+        logging.debug('Reading table %s', table)
         mysql_cur.execute("""
 SELECT * FROM information_schema.columns
 WHERE table_schema = %s and table_name = %s
@@ -262,7 +276,8 @@ WHERE table_schema = %s AND table_name = %s
             i.nullable = bool(row['NULLABLE'] == 'YES')
         indexes = d.values()
 
-        if not options.data_only:
+    if not options.data_only:
+        for table in tables:
             # Drop table if necessary.
             if options.drop_tables:
                 sql = "DROP TABLE IF EXISTS %s" % fix_reserved_word(table)
@@ -295,9 +310,10 @@ WHERE table_schema = %s AND table_name = %s
                 sql = i.pg_decl()
                 pg_execute(pg_conn, options, sql)
 
-
+    logging.info('Converting data')
     for table in tables:
         # Convert data.
+        logging.debug('Converting data in table %s', table)
         pg_table = fix_reserved_word(table)
         cols = table_cols[table]
 
@@ -307,14 +323,18 @@ WHERE table_schema = %s AND table_name = %s
                     ', '.join(c.name for c in cols),
                     ','.join(['%s'] * len(cols))))
 
-        mysql_cur.execute("SELECT * FROM %s", table)
+        # Ensure the table is empty.
+        pg_execute(pg_conn, options, "DELETE FROM %s" % pg_table)
+
+        mysql_cur.execute("SELECT * FROM %s" % table)
 
         # We don't do a fetchall() since the table contents are
         # very likely to not fit into memory.
         while True:
             row = mysql_cur.fetchone()
+            print row
             if row is None:
-                continue
+                break
 
             # Assemble a list of the output data that we'll subsequently
             # convert to a tuple.
@@ -326,9 +346,8 @@ WHERE table_schema = %s AND table_name = %s
 
             pg_execute(pg_conn, options, ins_sql, tuple(output_L))
 
-        pass
-
     # Close connections
+    logging.info('Closing database connections')
     mysql_conn.close()
     pg_conn.close()
 
