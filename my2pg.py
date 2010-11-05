@@ -160,6 +160,18 @@ class Index:
 def main ():
     parser = optparse.OptionParser(
         '%prog [options] mysql-host mysql-db pg-host pg-db')
+    parser.add_option('--data-only',
+                      action="store_true", default=False,
+                      dest="data_only",
+                      help="Assume the tables already exist, and only convert data")
+    parser.add_option('--drop-tables',
+                      action="store_true", default=False,
+                      dest="drop_tables",
+                      help="Drop existing PostgreSQL tables (if any) before creating")
+    parser.add_option('-n', '--dry-run',
+                      action="store_true", default=False,
+                      dest="dry_run",
+                      help="Make no changes to PostgreSQL database")
     parser.add_option('--mysql-user',
                       action="store",
                       dest="mysql_user",
@@ -176,18 +188,6 @@ def main ():
                       action="store", default='',
                       dest="pg_password",
                       help="Password to use when connecting to server.")
-    parser.add_option('-n', '--dry-run',
-                      action="store_true", default=False,
-                      dest="dry_run",
-                      help="Make no changes to PostgreSQL database")
-    parser.add_option('--drop-tables',
-                      action="store_true", default=False,
-                      dest="drop_tables",
-                      help="Drop existing PostgreSQL tables (if any) before creating")
-    parser.add_option('--data-only',
-                      action="store_true", default=False,
-                      dest="data_only",
-                      help="Assume the tables already exist, and only convert data")
     parser.add_option('--starting-table',
                       action="store", default=None,
                       dest="starting_table",
