@@ -77,6 +77,7 @@ def convert_data(col, data):
 
     Convert a Python value retrieved from MySQL into a PostgreSQL value.
     """
+    return data
 
 class Column:
     """
@@ -346,7 +347,7 @@ def main ():
         # Assemble the INSERT statement once.
         ins_sql = ('INSERT INTO %s (%s) VALUES (%s);' %
                    (pg_table,
-                    ', '.join(c.name for c in cols),
+                    ', '.join(fix_reserved_word(c.name) for c in cols),
                     ','.join(['%s'] * len(cols))))
 
         # Ensure the table is empty.
@@ -365,6 +366,7 @@ def main ():
             # Assemble a list of the output data that we'll subsequently
             # convert to a tuple.
             output_L = []
+            print row
             for c in cols:
                 data = row[c.name]
                 newdata = convert_data(c, data)
@@ -377,9 +379,6 @@ def main ():
     logging.info('Closing database connections')
     mysql_conn.close()
     pg_conn.close()
-
-
-
 
 
 if __name__ == '__main__':
