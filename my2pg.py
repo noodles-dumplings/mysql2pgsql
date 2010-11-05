@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-import sys
+import sys, os
 import optparse, logging
-import re, collections
+import re, collections, pickle
 import MySQLdb, psycopg2
 from MySQLdb.cursors import DictCursor
 
@@ -155,7 +155,60 @@ class Index:
             pass
         return sql
 
+def read_mysql_tables(mysql_cur, mysql_db, options):
+    """(Cursor):
+    """
+    logging.info('Reading structure of MySQL database')
+    mysql_cur.execute("""
+SELECT * FROM information_schema.tables WHERE table_schema = %s
+""", mysql_db)
+    rows = mysql_cur.fetchall()
+    tables = sorted(row['TABLE_NAME'] for row in rows)
+    if options.starting_table:
+        tables = [t for t in tables if options.starting_table <= t]
 
+    # Convert tables
+    table_cols = {}
+    table_indexes = {}
+    for table in tables:
+        logging.debug('Reading table %s', table)
+        mysql_cur.execute("""
+SELECT * FROM information_schema.columns
+WHERE table_schema = %s and table_name = %s
+""", (mysql_db, table))
+        cols = table_cols[table] = []
+        for row in mysql_cur.fetchall():
+            c = Column()
+            cols.append(c)
+            c.name = row['COLUMN_NAME']
+            c.type = row['COLUMN_TYPE']  #
+            c.position = row['ORDINAL_POSITION']
+            c.default = row['COLUMN_DEFAULT']
+            c.is_nullable = bool(row['IS_NULLABLE'] == 'YES')
+            # XXX character set?
+
+        # Sort columns into left-to-right order.
+        cols.sort(key=lambda c: c.position)
+
+        # Convert indexes
+        mysql_cur.execute("""
+SELECT * FROM information_schema.statistics
+WHERE table_schema = %s AND table_name = %s
+""", (mysql_db, table))
+        d = collections.defaultdict(Index)
+        for row in mysql_cur.fetchall():
+            index_name = row['INDEX_NAME']
+            i = d[index_name]
+            i.table = table
+            i.name = index_name
+            i.column_names.append(row['COLUMN_NAME'])
+            i.type = row['INDEX_TYPE']
+            i.non_unique = bool(row['NON_UNIQUE'])
+            i.nullable = bool(row['NULLABLE'] == 'YES')
+        table_indexes[table] = d.values()
+
+    return tables, table_cols, table_indexes
+    
 
 def main ():
     parser = optparse.OptionParser(
@@ -187,6 +240,10 @@ def main ():
     parser.add_option('--pg-password',
                       action="store", default='',
                       dest="pg_password",
+                      help="Password to use when connecting to server.")
+    parser.add_option('--pickle=',
+                      action="store", default='',
+                      dest="pickle",
                       help="Password to use when connecting to server.")
     parser.add_option('--starting-table',
                       action="store", default=None,
@@ -228,56 +285,25 @@ def main ():
     mysql_cur = mysql_conn.cursor(cursorclass=DictCursor)
 
     # Make list of tables to process.
-    logging.info('Reading structure of MySQL database')
-    mysql_cur.execute("""
-SELECT * FROM information_schema.tables WHERE table_schema = %s
-""", mysql_db)
-    rows = mysql_cur.fetchall()
-    tables = sorted(row['TABLE_NAME'] for row in rows)
-    if options.starting_table:
-        tables = [t for t in tables if options.starting_table <= t]
-
-    # Convert tables
-    table_cols = {}
-    for table in tables:
-        logging.debug('Reading table %s', table)
-        mysql_cur.execute("""
-SELECT * FROM information_schema.columns
-WHERE table_schema = %s and table_name = %s
-""", (mysql_db, table))
-        cols = table_cols[table] = []
-        for row in mysql_cur.fetchall():
-            c = Column()
-            cols.append(c)
-            c.name = row['COLUMN_NAME']
-            c.type = row['COLUMN_TYPE']  #
-            c.position = row['ORDINAL_POSITION']
-            c.default = row['COLUMN_DEFAULT']
-            c.is_nullable = bool(row['IS_NULLABLE'] == 'YES')
-            # XXX character set?
-
-        # Sort columns into left-to-right order.
-        cols.sort(key=lambda c: c.position)
-
-        # Convert indexes
-        mysql_cur.execute("""
-SELECT * FROM information_schema.statistics
-WHERE table_schema = %s AND table_name = %s
-""", (mysql_db, table))
-        d = collections.defaultdict(Index)
-        for row in mysql_cur.fetchall():
-            index_name = row['INDEX_NAME']
-            i = d[index_name]
-            i.table = table
-            i.name = index_name
-            i.column_names.append(row['COLUMN_NAME'])
-            i.type = row['INDEX_TYPE']
-            i.non_unique = bool(row['NON_UNIQUE'])
-            i.nullable = bool(row['NULLABLE'] == 'YES')
-        indexes = d.values()
-
+    if options.pickle and os.path.exists(options.pickle):
+        f = open(options.pickle, 'rb')
+        tables, table_cols, table_indexes = pickle.load(f)
+        f.close()
+    else:
+        tables, table_cols, table_indexes = read_mysql_tables(mysql_cur,
+                                                              mysql_db,
+                                                              options)
+        if options.pickle:
+            f = open(options.pickle, 'wb')
+            t = (tables, table_cols, table_indexes)
+            pickle.dump(t, f)
+            f.close()
+        
     if not options.data_only:
         for table in tables:
+            cols = table_cols[table]
+            indexes = table_indexes[table]
+
             # Drop table if necessary.
             if options.drop_tables:
                 sql = "DROP TABLE IF EXISTS %s" % fix_reserved_word(table)
@@ -344,6 +370,7 @@ WHERE table_schema = %s AND table_name = %s
                 newdata = convert_data(c, data)
                 output_L.append(newdata)
 
+            print output_L
             pg_execute(pg_conn, options, ins_sql, tuple(output_L))
 
     # Close connections
