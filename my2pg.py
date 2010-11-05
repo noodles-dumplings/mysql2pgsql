@@ -77,6 +77,9 @@ def convert_data(col, data):
 
     Convert a Python value retrieved from MySQL into a PostgreSQL value.
     """
+    if isinstance(data, str):
+        data = data.decode('latin-1')
+        data = data.encode('utf-8')
     return data
 
 class Column:
@@ -102,7 +105,8 @@ class Column:
         Return the PostgreSQL declaration syntax for this column.
         """
         typ = convert_type(self.type)
-        decl = '  %s %s' % (fix_reserved_word(self.name), typ)
+        decl_typ = typ
+        decl = '  %s %s' % (fix_reserved_word(self.name), decl_typ)
         if self.default:
             default = self.get_default()
             decl += ' DEFAULT %s' % default
@@ -167,7 +171,9 @@ SELECT * FROM information_schema.tables WHERE table_schema = %s
     tables = sorted(row['TABLE_NAME'] for row in rows)
     if options.starting_table:
         tables = [t for t in tables if options.starting_table <= t]
-
+    if 'MemberEmailPayload' in tables:
+        tables.remove('MemberEmailPayload')
+        
     # Convert tables
     table_cols = {}
     table_indexes = {}
@@ -359,14 +365,12 @@ def main ():
         # very likely to not fit into memory.
         while True:
             row = mysql_cur.fetchone()
-            print row
             if row is None:
                 break
 
             # Assemble a list of the output data that we'll subsequently
             # convert to a tuple.
             output_L = []
-            print row
             for c in cols:
                 data = row[c.name]
                 newdata = convert_data(c, data)
