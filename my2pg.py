@@ -185,8 +185,6 @@ SELECT * FROM information_schema.tables WHERE table_schema = %s
     tables = sorted(row['TABLE_NAME'] for row in rows)
     if options.starting_table:
         tables = [t for t in tables if options.starting_table <= t]
-    if 'MemberEmailPayload' in tables:
-        tables.remove('MemberEmailPayload')
         
     # Convert tables
     table_cols = {}
@@ -394,6 +392,8 @@ def main ():
 
             try:
                 pg_execute(pg_conn, options, ins_sql, tuple(output_L))
+            except KeyboardInterrupt:
+                raise
             except:
                 logging.error('Failure inserting row into table %s', table,
                               exc_info=True)
