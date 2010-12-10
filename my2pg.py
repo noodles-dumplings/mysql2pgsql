@@ -76,7 +76,15 @@ def convert_type(typ):
         return 'text'
     elif typ in ('tinyblob', 'blob', 'mediumblob', 'longblob'):
         return 'bytea'
-
+    elif typ.startswith('enum('):
+        # For enums, we'll return a varchar long enough to hold
+        # the longest possible value.
+        # XXX this parsing is very dumb.
+        values = typ[5:-1]  # Chop off enum( and ).
+        values = eval(values)
+        longest = max(len(v) for v in values)
+        return 'varchar(%i)' % longest
+        
     # Give up and just return the input type.
     return typ
 
@@ -308,6 +316,11 @@ def main ():
         f = open(options.pickle, 'rb')
         tables, table_cols, table_indexes = pickle.load(f)
         f.close()
+
+        # Discard tables that we don't need to process.
+        if options.starting_table:
+            tables = [t for t in tables if options.starting_table <= t]
+
     else:
         tables, table_cols, table_indexes = read_mysql_tables(mysql_cur,
                                                               mysql_db,
