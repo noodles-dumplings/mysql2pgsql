@@ -1,8 +1,16 @@
 #!/usr/bin/env python
 
+"""my2pg.py: MySQL to PostgreSQL database conversion
+
+Copyright (c) 2010 Matrix Group International.
+Licensed under the MIT license; see LICENSE file for terms.
+
+"""
+
 import sys, os
-import optparse, logging
+import optparse, logging, traceback
 import re, collections, pickle
+
 import MySQLdb, psycopg2
 from MySQLdb.cursors import DictCursor
 
@@ -80,6 +88,12 @@ def convert_data(col, data):
     if isinstance(data, str):
         data = data.decode('latin-1')
         data = data.encode('utf-8')
+
+    if col.type in ('tinyblob', 'blob', 'mediumblob', 'longblob') and data:
+        # Convert to a BYTEA literal.  We just use octal escapes for
+        # everything.
+        L = [('\\%03o') % ord(ch) for ch in data]
+        data = ''.join(L)
     return data
 
 class Column:
@@ -93,7 +107,7 @@ class Column:
     default : str
     is_nullable : bool
 
-<    """
+    """
 
     def __init__(self, **kw):
         for k,v in kw.items():
@@ -376,8 +390,11 @@ def main ():
                 newdata = convert_data(c, data)
                 output_L.append(newdata)
 
-            print output_L
-            pg_execute(pg_conn, options, ins_sql, tuple(output_L))
+            try:
+                pg_execute(pg_conn, options, ins_sql, tuple(output_L))
+            except:
+                logging.error('Failure inserting row into table %s', table,
+                              exc_info=True)
 
     # Close connections
     logging.info('Closing database connections')
