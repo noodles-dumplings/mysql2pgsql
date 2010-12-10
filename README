@@ -1,6 +1,52 @@
+my2pg.py: MySQL to PostgreSQL database conversion
+----------------------------------------------------
 
-Data type changes: bigint NOT NULL auto_increment -> bigserial, mediumtext -> text, blob->bytea, enum -> varchar or equivalent.
-# Change usage of \' to \'\', or use E\'\' syntax.
-#
-# pleasewait.starttime has 'on update' trigger. 
-# MemberEmailPayload uses ENUM.
+Copyright (c) 2010 Matrix Group International.
+Licensed under the MIT license; see LICENSE file for terms.
+
+Converts a MySQL database to a PostgreSQL database by reading the
+MySQL system tables and then converting the data.
+
+Aims for compatibility with PostgreSQL 8.2.7, since this is the
+version supported in Ubuntu LTS at the moment.
+
+Issues for MatrixMaxx databases: 
+
+* pleasewait.starttime has 'on update' trigger. 
+
+* Often have duplicated indexes -- psql reports an error and future
+  SQL commands raise an exception.
+
+
+Usage: my2pg.py [options] mysql-host mysql-db pg-host pg-db
+
+Options:
+  -h, --help            show this help message and exit
+  --data-only           Assume the tables already exist, and only convert data
+  --drop-tables         Drop existing PostgreSQL tables (if any) before
+                        creating
+  -n, --dry-run         Make no changes to PostgreSQL database
+  --mysql-user=MYSQL_USER
+                        User for login if not current user.
+  --mysql-password=MYSQL_PASSWORD
+                        Password to use when connecting to server.
+  --pg-user=PG_USER     User for login if not current user.
+  --pg-password=PG_PASSWORD
+                        Password to use when connecting to server.
+  --pickle==PICKLE      File for storing a pickled version of the MySQL table
+                        structure.
+  --starting-table=STARTING_TABLE
+                        Name of table to start conversion with
+  -v, --verbose         Display more output as the script runs
+
+Example:
+./my2pg.py -v -v
+   --mysql-user=amk
+   --mysql-password=mysqlpw
+   --pg-user=amk --drop-tables 
+   mysqlhost mysqldbname localhost pgdbname
+
+
+
+A.M. Kuchling 
+amk@amk.ca
