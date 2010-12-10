@@ -263,7 +263,7 @@ def main ():
     parser.add_option('--pickle=',
                       action="store", default='',
                       dest="pickle",
-                      help="Password to use when connecting to server.")
+                      help="File for storing a pickled version of the MySQL table structure.")
     parser.add_option('--starting-table',
                       action="store", default=None,
                       dest="starting_table",
