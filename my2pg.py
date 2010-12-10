@@ -68,7 +68,7 @@ def convert_type(typ):
         return 'integer'
     elif typ == 'float':
         return 'real'
-    elif typ == 'double':
+    elif re.match('double([(]\d+,\d+[)])?', typ):
         return 'double precision'
     elif typ == 'datetime':
         return 'timestamp'
@@ -330,7 +330,10 @@ def main ():
             t = (tables, table_cols, table_indexes)
             pickle.dump(t, f)
             f.close()
-        
+
+    #
+    # Convert the table structure.
+    # 
     if not options.data_only:
         for table in tables:
             cols = table_cols[table]
@@ -366,8 +369,15 @@ def main ():
                     continue
 
                 sql = i.pg_decl()
-                pg_execute(pg_conn, options, sql)
+                try:
+                    pg_execute(pg_conn, options, sql)
+                except Exception:
+                    logging.error('Failure creating index on table %s', table,
+                                  exc_info=True)
 
+    #
+    # Convert data.
+    # 
     logging.info('Converting data')
     for table in tables:
         # Convert data.
