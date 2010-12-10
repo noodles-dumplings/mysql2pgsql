@@ -14,6 +14,9 @@ import re, collections, pickle
 import MySQLdb, psycopg2
 from MySQLdb.cursors import DictCursor
 
+# We commit data rows every so often.
+COMMIT_AFTER_ROWS = 10000
+
 def pg_execute(pg_conn, options, sql, args=()):
     """(Connection, Options, str, tuple)
 
@@ -375,13 +378,15 @@ def main ():
                     logging.error('Failure creating index on table %s', table,
                                   exc_info=True)
 
+            pg_conn.commit()
+
     #
     # Convert data.
     # 
     logging.info('Converting data')
     for table in tables:
         # Convert data.
-        logging.debug('Converting data in table %s', table)
+        logging.info('Converting data in table %s', table)
         pg_table = fix_reserved_word(table)
         cols = table_cols[table]
 
@@ -423,9 +428,13 @@ def main ():
                 errors += 1
             else:
                 row_count += 1
+                if (row_count % COMMIT_AFTER_ROWS) == 0:
+                    logging.debug('Committing transaction after %i rows', COMMIT_AFTER_ROWS)
+                    pg_conn.commit()
 
         logging.info("Table %s: %i rows converted (%i errors)",
                      table, row_count, errors)
+        pg_conn.commit()
         
     # Close connections
     logging.info('Closing database connections')
