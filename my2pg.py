@@ -19,7 +19,7 @@ def pg_execute(pg_conn, options, sql, args=()):
 
     Log and execute a SQL command on the PostgreSQL connection.
     """
-    print sql
+    #print sql
     if not options.dry_run:
         pg_cur = pg_conn.cursor()
         pg_cur.execute(sql, args)
@@ -377,6 +377,8 @@ def main ():
 
         # We don't do a fetchall() since the table contents are
         # very likely to not fit into memory.
+        row_count = 0
+        errors = 0
         while True:
             row = mysql_cur.fetchone()
             if row is None:
@@ -395,7 +397,13 @@ def main ():
             except:
                 logging.error('Failure inserting row into table %s', table,
                               exc_info=True)
+                errors += 1
+            else:
+                row_count += 1
 
+        logging.info("Table %s: %i rows converted (%i errors)",
+                     table, row_count, errors)
+        
     # Close connections
     logging.info('Closing database connections')
     mysql_conn.close()
