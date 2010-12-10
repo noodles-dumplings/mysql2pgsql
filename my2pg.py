@@ -314,7 +314,7 @@ def main ():
         tables, table_cols, table_indexes = read_mysql_tables(mysql_cur,
                                                               mysql_db,
                                                               options)
-        if options.pickle:
+        if options.pickle and not options.starting_table:
             f = open(options.pickle, 'wb')
             t = (tables, table_cols, table_indexes)
             pickle.dump(t, f)
