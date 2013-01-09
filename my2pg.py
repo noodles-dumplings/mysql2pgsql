@@ -281,8 +281,10 @@ class Index(object):
 
 def read_mysql_tables(mysql_cur, mysql_db, options):
     logging.info('Reading structure of MySQL database')
-    mysql_cur.execute('''SELECT * FROM information_schema.tables
-                      WHERE table_schema = %s''', mysql_db)
+    mysql_cur.execute('''
+        SELECT * FROM information_schema.tables
+        WHERE table_schema = %s and TABLE_TYPE = 'BASE TABLE'
+    ''', mysql_db)
     rows = mysql_cur.fetchall()
     tables = sorted(row['TABLE_NAME'] for row in rows)
     if options.starting_table:
