@@ -147,8 +147,8 @@ def convert_type(typ, auto_increment=False):
         # For enums, we'll new_type =  a varchar long enough to hold
         # the longest possible value.
         # XXX this parsing is very dumb.
-        values = typ[5:-1]  # Chop off enum( and ).
-        values = eval(values)
+        # we assume that enum values does not contain commas
+        values = typ[5:-1].replace("'", '').split(',')
         longest = max(len(v) for v in values)
         new_type = 'varchar(%i)' % longest
 

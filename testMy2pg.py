@@ -12,7 +12,9 @@ class TypeConversionTestCase(unittest.TestCase):
         self.assertEqual(my2pg.convert_type('int(11)'), 'integer')
         self.assertEqual(my2pg.convert_type('integer(11)'), 'integer')
         self.assertEqual(my2pg.convert_type('bigint(8)'), 'bigint')
-        self.assertEqual(my2pg.convert_type('unsigned int'), 'integer')
+        self.assertEqual(my2pg.convert_type('varchar(16)'), 'varchar(16)')
+        self.assertEqual(my2pg.convert_type("enum('Workshop')"), 'varchar(8)')
+
 
 if __name__ == '__main__':
     unittest.main()
