@@ -112,6 +112,7 @@ def convert_type(typ, auto_increment=False):
     Parses a MySQL type declaration and returns the corresponding PostgreSQL
     type.
     """
+    is_unsigned = typ.find('unsigned') != -1
     typ = typ.replace('unsigned', '').strip()
     new_type = ''
     if re.match('tinyint([(]\d+[)])?', typ):
@@ -126,9 +127,15 @@ def convert_type(typ, auto_increment=False):
         # XXX use the parametrized number?
         new_type = 'bigint'
     elif re.match('integer([(]\d+[)])?', typ):
-        new_type = 'integer'
+        if is_unsigned:
+            new_type = 'bigint'
+        else:
+            new_type = 'integer'
     elif re.match('int([(]\d+[)])?', typ):
-        new_type = 'integer'
+        if is_unsigned:
+            new_type = 'bigint'
+        else:
+            new_type = 'integer'
     elif typ == 'float':
         new_type = 'real'
     elif re.match('double([(]\d+,\d+[)])?', typ):
